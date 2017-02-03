@@ -18,6 +18,8 @@ along with sysdig.  If not, see <http://www.gnu.org/licenses/>.
 
 #pragma once
 
+#include <set>
+
 #ifdef HAS_FILTERING
 
 class sinsp_filter_expression;
@@ -167,33 +169,60 @@ private:
 class SINSP_PUBLIC sinsp_evttype_filter
 {
 public:
+	typedef uint16_t tag_t;
+	typedef set<tag_t> tagset_t;
+
 	sinsp_evttype_filter();
 	virtual ~sinsp_evttype_filter();
 
+	// To this class, tags are opaque numeric ids. Users of this
+	// class (i.e. in falco_engine) maintain a string-to-id index.
+	//
+	// Although the possible range of a tag is 16 bits, it's
+	// generally assumed that tags are in the range 0...k for small
+	// k.
 	void add(std::string &name,
-		 list<uint32_t> &evttypes,
+		 std::set<uint32_t> &evttypes,
+		 tagset_t &tags,
 		 sinsp_filter* filter);
 
 	void enable(std::string &pattern, bool enabled);
+	void enable_tags(tagset_t &tags,
+			 bool enabled);
 
-	bool run(sinsp_evt *evt);
+	// Match all filters against the provided event. If tags is
+	// non-empty, only those filters having a tag in the set of
+	// tags will run.
+	bool run(sinsp_evt *evt, tagset_t &tags);
 
 private:
 
 	struct filter_wrapper {
 		sinsp_filter *filter;
-		list<uint32_t> evttypes;
+		std::set<uint32_t> evttypes;
+
+		// Indexes from tag to tag set/unset. Unlike
+		// m_filter_by_evttype, this is managed as a vector as we're
+		// expecting tag ids that are small and grouped in the range
+		// 0..k, as compared to all possible event types.
+		std::vector<bool> tags;
+
 		bool enabled;
 	};
 
+	bool run_given_tags(sinsp_evt *evt, filter_wrapper *wrap, tagset_t &tags);
+
 	// Maps from event type to filter. There can be multiple
 	// filters per event type.
-	list<filter_wrapper *> *m_filter_by_evttype[PPM_EVENT_MAX];
+	std::list<filter_wrapper *> *m_filter_by_evttype[PPM_EVENT_MAX];
 
 	// It's possible to add an event type filter with an empty
 	// list of event types, meaning it should run for all event
 	// types.
-	list<filter_wrapper *> m_catchall_evttype_filters;
+	std::list<filter_wrapper *> m_catchall_evttype_filters;
+
+	// Maps from tag to list of filters having that tag.
+	std::vector<std::list<filter_wrapper *>> m_filter_by_tag;
 
 	// This holds all the filters in
 	// m_filter_by_evttype/m_catchall_evttype_filters, so they can

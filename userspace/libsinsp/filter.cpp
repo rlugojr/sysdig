@@ -2002,7 +2002,7 @@ sinsp_evttype_filter::~sinsp_evttype_filter()
 
 	m_catchall_evttype_filters.clear();
 
-	for(auto val : m_evttype_filters)
+	for(auto &val : m_evttype_filters)
 	{
 		delete val.second->filter;
 		delete val.second;
@@ -2011,7 +2011,8 @@ sinsp_evttype_filter::~sinsp_evttype_filter()
 }
 
 void sinsp_evttype_filter::add(string &name,
-			       list<uint32_t> &evttypes,
+			       set<uint32_t> &evttypes,
+			       tagset_t &tags,
 			       sinsp_filter *filter)
 {
 	filter_wrapper *wrap = new filter_wrapper();
@@ -2028,7 +2029,7 @@ void sinsp_evttype_filter::add(string &name,
 	else
 	{
 
-		for(auto evttype: evttypes)
+		for(auto &evttype: evttypes)
 		{
 			list<filter_wrapper *> *filters = m_filter_by_evttype[evttype];
 			if(filters == NULL)
@@ -2040,13 +2041,28 @@ void sinsp_evttype_filter::add(string &name,
 			filters->push_back(wrap);
 		}
 	}
+
+	for(auto &tag: tags)
+	{
+		if(m_filter_by_tag.size() < (size_t) tag + 1)
+		{
+			m_filter_by_tag.resize(tag + 1);
+		}
+		m_filter_by_tag[tag].push_back(wrap);
+
+		if(wrap->tags.size() < (size_t) tag + 1)
+		{
+			wrap->tags.resize(tag + 1);
+		}
+		wrap->tags[tag] = true;
+	}
 }
 
 void sinsp_evttype_filter::enable(string &pattern, bool enabled)
 {
 	regex re(pattern);
 
-	for(auto val : m_evttype_filters)
+	for(auto &val : m_evttype_filters)
 	{
 		if (regex_match(val.first, re))
 		{
@@ -2055,7 +2071,47 @@ void sinsp_evttype_filter::enable(string &pattern, bool enabled)
 	}
 }
 
-bool sinsp_evttype_filter::run(sinsp_evt *evt)
+void sinsp_evttype_filter::enable_tags(tagset_t &tags, bool enabled)
+{
+	for(auto &tag : tags)
+	{
+		for(auto &wrap : m_filter_by_tag[tag])
+		{
+			wrap->enabled = enabled;
+		}
+	}
+}
+
+inline bool sinsp_evttype_filter::run_given_tags(sinsp_evt *evt, filter_wrapper *wrap, tagset_t &tags)
+{
+	bool tag_found = true;
+
+	// If tags were specified, this filter
+	// must have one of the provided tags.
+	if(tags.size() > 0)
+	{
+		tag_found = false;
+
+		for(auto &tag : tags)
+		{
+			if(tag < wrap->tags.size() &&
+			   wrap->tags[tag])
+			{
+				tag_found = true;
+				break;
+			}
+		}
+	}
+
+	if (tag_found && wrap->filter->run(evt) == true)
+	{
+		return true;
+	}
+
+	return false;
+}
+
+bool sinsp_evttype_filter::run(sinsp_evt *evt, tagset_t &tags)
 {
 	//
 	// First run any catchall event type filters (ones that did not
@@ -2063,7 +2119,7 @@ bool sinsp_evttype_filter::run(sinsp_evt *evt)
 	//
 	for(filter_wrapper *wrap : m_catchall_evttype_filters)
 	{
-		if(wrap->enabled && wrap->filter->run(evt) == true)
+		if(wrap->enabled && run_given_tags(evt, wrap, tags) == true)
 		{
 			return true;
 		}
@@ -2075,7 +2131,7 @@ bool sinsp_evttype_filter::run(sinsp_evt *evt)
 	{
 		for(filter_wrapper *wrap : *filters)
 		{
-			if(wrap->enabled && wrap->filter->run(evt) == true)
+			if(wrap->enabled && run_given_tags(evt, wrap, tags))
 			{
 				return true;
 			}

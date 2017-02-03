@@ -1439,7 +1439,8 @@ const string sinsp::get_filter()
 }
 
 void sinsp::add_evttype_filter(string &name,
-			       list<uint32_t> &evttypes,
+			       set<uint32_t> &evttypes,
+			       sinsp_evttype_filter::tagset_t &tags,
 			       sinsp_filter *filter)
 {
 	// Create the evttype filter if it doesn't exist.
@@ -1448,7 +1449,7 @@ void sinsp::add_evttype_filter(string &name,
 		m_evttype_filter = new sinsp_evttype_filter();
 	}
 
-	m_evttype_filter->add(name, evttypes, filter);
+	m_evttype_filter->add(name, evttypes, tags, filter);
 }
 
 bool sinsp::run_filters_on_evt(sinsp_evt *evt)
@@ -1463,7 +1464,10 @@ bool sinsp::run_filters_on_evt(sinsp_evt *evt)
 
 	//
 	// Then run the evttype filter, if there is one.
-	if(m_evttype_filter && m_evttype_filter->run(evt) == true)
+	//
+	// (In this case we use an empty set of tags)
+	sinsp_evttype_filter::tagset_t tags;
+	if(m_evttype_filter && m_evttype_filter->run(evt, tags) == true)
 	{
 		return true;
 	}
@@ -1827,7 +1831,7 @@ void sinsp::init_k8s_client(string* api_server, string* ssl_cert, bool verbose)
 	m_k8s_api_server = api_server;
 	m_k8s_api_cert = ssl_cert;
 
-	
+
 #ifdef HAS_CAPTURE
 	if(m_k8s_api_detected && m_k8s_ext_detect_done)
 #endif // HAS_CAPTURE
